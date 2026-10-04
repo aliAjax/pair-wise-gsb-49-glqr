@@ -1,0 +1,11 @@
+{
+  "projectId": "pair-wise-gsb-49",
+  "projectName": "pair-wise-gsb-49",
+  "category": "地狱 Python 模块化项目",
+  "businessDomain": "再保险",
+  "projectForm": "完整项目",
+  "codeScope": "backend, frontend",
+  "languages": ["Python", "HTML", "CSS", "JavaScript"],
+  "summary": "再保险合约与巨灾暴露管理服务，覆盖分层摊回、赔偿限额、恢复保费和冲突检查。",
+  "containerized": false
+}
