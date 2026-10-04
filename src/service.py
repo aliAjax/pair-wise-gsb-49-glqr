@@ -41,7 +41,11 @@ class Service:
     def get_record(self, actor: Actor, record_id: int) -> Dict[str, Any]:
         actor = self._actor(actor)
         self._ensure_known_role(actor)
-        return self.repository.get(record_id)
+        record = self.repository.get(record_id)
+        ledger = getattr(self, "ledger", None)
+        if ledger is not None:
+            record = ledger.enrich_record(record)
+        return record
 
     def act(self, actor: Actor, record_id: int, expected_version: int, action: str, data: Dict[str, Any]) -> Dict[str, Any]:
         actor = self._actor(actor)

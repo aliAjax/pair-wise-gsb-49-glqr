@@ -7,27 +7,66 @@
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem; color: #17212b; }
     main { max-width: 960px; margin: auto; }
-    button { padding: .55rem .9rem; cursor: pointer; }
+    button { padding: .55rem .9rem; cursor: pointer; margin: .15rem; }
     pre { background: #f4f6f8; padding: 1rem; overflow: auto; border-radius: 8px; }
-    .row { display: flex; gap: 1rem; align-items: center; }
+    .row { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; margin-bottom: .4rem; }
+    h2 { margin-top: 1.6rem; font-size: 1.1rem; }
   </style>
 </head>
 <body>
 <main>
   <h1>再保险合约与巨灾暴露管理</h1>
-  <p>最小演示页。完整业务流程通过README中的JSON接口调用。</p>
+  <p>最小演示页。写操作自动携带 Idempotency-Key，重放同一按钮可验证返回原结果。</p>
+  <h2>记账链：事件 → 分层 → 赔案 → 恢复台账</h2>
+  <div class="row">
+    <button data-post="event">1. 登记事件</button>
+    <button data-post="layer">2. 登记分层</button>
+    <button data-post="assess">3. 核定预占</button>
+    <button data-post="settle">4. 结算确认</button>
+    <button data-post="withdraw">撤回事件</button>
+  </div>
+  <div class="row">
+    <button id="events">事件列表</button>
+    <button id="layers">分层占用</button>
+    <button id="claims">赔案台账</button>
+    <button id="audit">事件审计</button>
+  </div>
+  <h2>旧记录流程</h2>
   <div class="row"><button id="load">加载记录</button><button id="stats">查看状态统计</button></div>
   <pre id="output">点击上方按钮读取服务状态。</pre>
 </main>
 <script>
-const headers = {"X-User-Id":"demo-admin","X-Role":"admin","X-Org":"demo"};
-async function show(path) {
-  const response = await fetch(path, {headers});
-  const data = await response.json();
-  document.getElementById("output").textContent = JSON.stringify(data, null, 2);
+const headers = {"X-User-Id":"demo-admin","X-Role":"admin","X-Org":"demo","Content-Type":"application/json"};
+const out = document.getElementById("output");
+function show(path, options) {
+  return fetch(path, options).then(async r => {
+    const data = await r.json();
+    out.textContent = "HTTP " + r.status + (r.headers.get("Idempotent-Replay") ? " (replay)" : "")
+      + "\n" + JSON.stringify(data, null, 2);
+  });
 }
-document.getElementById("load").onclick = () => show("/api/records?limit=20");
-document.getElementById("stats").onclick = () => show("/api/stats");
+function post(path, key, body) {
+  return () => show(path, {method:"POST", headers:{...headers, "Idempotency-Key":key}, body:JSON.stringify(body)});
+}
+const setup = [
+  ["event", "/api/events", "demo-event-1", {event_code:"CAT-DEMO", name:"演示台风"}],
+  ["layer", "/api/layers", "demo-layer-1", {layer_code:"L-DEMO", attachment:1000000, limit_amount:5000000,
+    cession_pct:0.4, reinstatement_count:1, reinstatement_rate:0.15}],
+  ["assess", "/api/claims/assess", "demo-assess-1", {claim_number:"CL-DEMO", event_code:"CAT-DEMO",
+    layer_code:"L-DEMO", loss_amount:3000000}],
+  ["settle", "/api/claims/settle", "demo-settle-1", {claim_number:"CL-DEMO", payment_ref:"PAY-DEMO"}],
+  ["withdraw", "/api/events/CAT-DEMO/withdraw", "demo-withdraw-1", {reason:"演示撤回"}],
+];
+document.querySelectorAll("button[data-post]").forEach(btn => {
+  const item = setup.find(s => s[0] === btn.dataset.post);
+  btn.onclick = post(item[1], item[2], item[3]);
+});
+document.getElementById("events").onclick = () => show("/api/events");
+document.getElementById("layers").onclick = () => show("/api/layers");
+document.getElementById("claims").onclick = () => show("/api/claims");
+document.getElementById("audit").onclick = () => show("/api/events/1/audit");
+document.getElementById("load").onclick = () => show("/api/records?limit=20", {headers});
+document.getElementById("stats").onclick = () => show("/api/stats", {headers});
 </script>
 </body>
 </html>

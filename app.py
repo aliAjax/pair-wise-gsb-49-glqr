@@ -4,6 +4,9 @@ from pathlib import Path
 
 from src.audit import AuditRecorder
 from src.http_api import create_server
+from src.ledger_rules import LedgerRules
+from src.ledger_service import LedgerService
+from src.ledger_store import LedgerStore
 from src.repository import Repository
 from src.rules import DomainRules
 from src.service import Service
@@ -14,10 +17,18 @@ DEFAULT_DB = BASE_DIR / "reinsurance-exposure.db"
 DEFAULT_PORT = 8325
 
 
-def build_service(db_path: str) -> Service:
+def build_service(db_path: str, recover: bool = False):
     repository = Repository(db_path)
     audit = AuditRecorder(repository)
-    return Service(repository, DomainRules(), audit)
+    service = Service(repository, DomainRules(), audit)
+    ledger_store = LedgerStore(repository)
+    ledger = LedgerService(ledger_store, LedgerRules())
+    service.ledger = ledger
+    recovery_report = None
+    if recover:
+        # 写入中断后重启：先对账续作，再对外服务。
+        recovery_report = ledger.startup_recovery()
+    return service if recovery_report is None else (service, recovery_report)
 
 
 def parse_args():
@@ -25,13 +36,17 @@ def parse_args():
     parser.add_argument("--db", default=str(DEFAULT_DB), help="SQLite数据库路径")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="HTTP监听端口")
     parser.add_argument("--host", default="127.0.0.1", help="监听地址")
+    parser.add_argument("--no-recover", action="store_true", help="启动时跳过对账续作与旧数据回填")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     Path(args.db).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
-    service = build_service(args.db)
+    built = build_service(args.db, recover=not args.no_recover)
+    service, recovery_report = built if isinstance(built, tuple) else (built, None)
+    if recovery_report is not None:
+        print("启动对账续作完成: %s" % recovery_report, flush=True)
     server = create_server(args.host, args.port, service, BASE_DIR / "static")
     print("再保险合约与巨灾暴露管理 listening on http://%s:%s" % (args.host, args.port), flush=True)
     try:
