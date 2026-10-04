@@ -14,10 +14,15 @@ DEFAULT_DB = BASE_DIR / "reinsurance-exposure.db"
 DEFAULT_PORT = 8325
 
 
-def build_service(db_path: str) -> Service:
+def build_service(db_path: str, recover: bool = False) -> Service:
     repository = Repository(db_path)
     audit = AuditRecorder(repository)
-    return Service(repository, DomainRules(), audit)
+    service = Service(repository, DomainRules(), audit)
+    if recover:
+        # 写入中断后重启：旧数据先补事件序列，再对账续作
+        report = service.startup_recovery()
+        print("启动对账完成: %s" % report, flush=True)
+    return service
 
 
 def parse_args():
@@ -31,7 +36,7 @@ def parse_args():
 def main() -> None:
     args = parse_args()
     Path(args.db).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
-    service = build_service(args.db)
+    service = build_service(args.db, recover=True)
     server = create_server(args.host, args.port, service, BASE_DIR / "static")
     print("再保险合约与巨灾暴露管理 listening on http://%s:%s" % (args.host, args.port), flush=True)
     try:

@@ -28,6 +28,41 @@ class PermissionDenied(DomainError):
     code = "permission_denied"
 
 
+class CapacityExhausted(Conflict):
+    status = 409
+    code = "capacity_exhausted"
+
+
+class EventInactive(Conflict):
+    status = 409
+    code = "event_inactive"
+
+
+# 赔案状态机
+STATE_QUOTED = "quoted"
+STATE_BOUND = "bound"
+STATE_CLAIM_SUBMITTED = "claim_submitted"
+STATE_CALCULATED = "calculated"
+STATE_SETTLED = "settled"
+STATE_REJECTED = "rejected"
+STATE_INVALIDATED = "invalidated"
+
+# 巨灾事件状态
+EVENT_ACTIVE = "active"
+EVENT_WITHDRAWN = "withdrawn"
+
+# 恢复台账记账类型
+ENTRY_RESERVE = "reserve"
+ENTRY_CONFIRM = "confirm"
+ENTRY_RELEASE = "release"
+
+# 记账/审计来源：实时办理、同号重放、启动对账修复、旧数据回填
+SOURCE_LIVE = "live"
+SOURCE_REPLAY = "replay"
+SOURCE_RECONCILE = "reconcile"
+SOURCE_MIGRATION = "migration"
+
+
 @dataclass(frozen=True)
 class Actor:
     user_id: str

@@ -3,7 +3,7 @@ import json
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from .domain import Actor, DomainError, PermissionDenied, ValidationError
@@ -12,11 +12,12 @@ from .domain import Actor, DomainError, PermissionDenied, ValidationError
 RECORD_RE = re.compile(r"^/api/records/(\d+)$")
 ACTION_RE = re.compile(r"^/api/records/(\d+)/actions/([a-z_]+)$")
 AUDIT_RE = re.compile(r"^/api/records/(\d+)/audit$")
+LAYER_BALANCE_RE = re.compile(r"^/api/layers/([^/]+)/balance$")
 
 
 def make_handler(service: Any, static_dir: Path):
     class Handler(BaseHTTPRequestHandler):
-        server_version = "reinsurance-exposure/1.0"
+        server_version = "reinsurance-exposure/2.0"
 
         def log_message(self, fmt: str, *args: Any) -> None:
             return
@@ -28,7 +29,7 @@ def make_handler(service: Any, static_dir: Path):
                 raise PermissionDenied("缺少X-User-Id或X-Role")
             return Actor(user_id=user_id, role=role, organization=self.headers.get("X-Org", ""))
 
-        def _body(self) -> Dict[str, Any]:
+        def _body(self) -> dict:
             try:
                 length = int(self.headers.get("Content-Length", "0"))
             except ValueError as exc:
@@ -64,6 +65,7 @@ def make_handler(service: Any, static_dir: Path):
         def do_GET(self) -> None:
             try:
                 parsed = urlparse(self.path)
+                query = parse_qs(parsed.query)
                 if parsed.path == "/health":
                     self._send(200, {"status": "ok", "service": "reinsurance-exposure", "database": service.repository.health()})
                     return
@@ -72,9 +74,33 @@ def make_handler(service: Any, static_dir: Path):
                     self._send(200, page, "text/html; charset=utf-8")
                     return
                 if parsed.path == "/api/records":
-                    query = parse_qs(parsed.query)
-                    records = service.list_records(self._actor(), state=query.get("state", [None])[0], limit=int(query.get("limit", ["100"])[0]))
+                    records = service.list_records(
+                        self._actor(), state=query.get("state", [None])[0],
+                        limit=int(query.get("limit", ["100"])[0]),
+                        event_id=query.get("event_id", [None])[0])
                     self._send(200, {"items": records})
+                    return
+                if parsed.path == "/api/events":
+                    self._send(200, {"items": service.list_events(self._actor())})
+                    return
+                if parsed.path == "/api/layers":
+                    self._send(200, {"items": service.list_layers(self._actor())})
+                    return
+                match = LAYER_BALANCE_RE.match(parsed.path)
+                if match:
+                    self._send(200, service.layer_balance(self._actor(), match.group(1)))
+                    return
+                if parsed.path == "/api/ledger":
+                    self._send(200, {"items": service.ledger(
+                        self._actor(),
+                        layer_code=query.get("layer", [None])[0],
+                        event_id=query.get("event", [None])[0],
+                        claim_id=int(query["claim"][0]) if query.get("claim") else None,
+                        limit=int(query.get("limit", ["200"])[0]))})
+                    return
+                if parsed.path == "/api/audit":
+                    self._send(200, {"items": service.timeline(
+                        self._actor(), limit=int(query.get("limit", ["200"])[0]))})
                     return
                 match = RECORD_RE.match(parsed.path)
                 if match:
@@ -95,16 +121,31 @@ def make_handler(service: Any, static_dir: Path):
             try:
                 parsed = urlparse(self.path)
                 body = self._body()
+                actor = self._actor()
                 if parsed.path == "/api/records":
-                    record = service.create(self._actor(), body.get("reference", ""), body.get("data", {}))
-                    self._send(201, record)
+                    record = service.create(actor, body.get("reference", ""), body.get("data", {}))
+                    self._send(201 if not record.get("replayed") else 200, record)
+                    return
+                if parsed.path == "/api/events":
+                    self._send(201, service.register_event(actor, body.get("data", body)))
+                    return
+                if parsed.path == "/api/events/withdraw":
+                    data = body.get("data", body)
+                    result = service.withdraw_event(actor, data.get("event_id", ""), data.get("reason", ""))
+                    self._send(200, result)
+                    return
+                if parsed.path == "/api/layers":
+                    self._send(201, service.register_layer(actor, body.get("data", body)))
+                    return
+                if parsed.path == "/api/reconcile":
+                    self._send(200, service.reconcile(actor))
                     return
                 match = ACTION_RE.match(parsed.path)
                 if match:
                     version = body.get("expected_version")
                     if not isinstance(version, int):
                         raise ValidationError("expected_version必须是整数")
-                    record = service.act(self._actor(), int(match.group(1)), version, match.group(2), body.get("data", {}))
+                    record = service.act(actor, int(match.group(1)), version, match.group(2), body.get("data", {}))
                     self._send(200, record)
                     return
                 self._send(404, {"error": "not_found", "message": "路径不存在"})

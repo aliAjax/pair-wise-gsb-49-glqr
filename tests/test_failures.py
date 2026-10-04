@@ -21,9 +21,16 @@ class FailureTest(unittest.TestCase):
     def test_permission_and_duplicate(self):
         with self.assertRaises(PermissionDenied):
             self.service.create(Actor("outsider", "outsider"), "RI-25001", CREATE_DATA)
-        self.service.create(Actor("creator", "underwriter"), "RI-25001", CREATE_DATA)
+        first = self.service.create(Actor("creator", "underwriter"), "RI-25001", CREATE_DATA)
+        # 同一编号重放：载荷一致返回原结果
+        replay = self.service.create(Actor("creator", "underwriter"), "RI-25001", CREATE_DATA)
+        self.assertTrue(replay["replayed"])
+        self.assertEqual(replay["id"], first["id"])
+        # 载荷不同：拒绝覆盖
+        changed = dict(CREATE_DATA)
+        changed["loss_amount"] = 9999999.0
         with self.assertRaises(Conflict):
-            self.service.create(Actor("creator", "underwriter"), "RI-25001", CREATE_DATA)
+            self.service.create(Actor("creator", "underwriter"), "RI-25001", changed)
 
     def test_stale_version_is_rejected(self):
         record = self.service.create(Actor("creator", "underwriter"), "RI-25001", CREATE_DATA)

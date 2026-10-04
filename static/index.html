@@ -7,17 +7,30 @@
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem; color: #17212b; }
     main { max-width: 960px; margin: auto; }
-    button { padding: .55rem .9rem; cursor: pointer; }
+    button { padding: .55rem .9rem; cursor: pointer; margin: .2rem .15rem; }
     pre { background: #f4f6f8; padding: 1rem; overflow: auto; border-radius: 8px; }
-    .row { display: flex; gap: 1rem; align-items: center; }
+    .row { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+    h2 { margin-top: 1.5rem; font-size: 1.05rem; }
   </style>
 </head>
 <body>
 <main>
   <h1>再保险合约与巨灾暴露管理</h1>
-  <p>最小演示页。完整业务流程通过README中的JSON接口调用。</p>
-  <div class="row"><button id="load">加载记录</button><button id="stats">查看状态统计</button></div>
-  <pre id="output">点击上方按钮读取服务状态。</pre>
+  <p>记账链：巨灾事件 → 合约分层 → 赔案 → 恢复台账（核定预占 / 结算确认 / 释放）。</p>
+  <h2>实体与余额</h2>
+  <div class="row">
+    <button onclick="show('/api/events')">巨灾事件</button>
+    <button onclick="show('/api/layers')">合约分层</button>
+    <button onclick="show('/api/records?limit=20')">赔案列表</button>
+    <button onclick="show('/api/stats')">状态与保费统计</button>
+  </div>
+  <h2>记账链与审计</h2>
+  <div class="row">
+    <button onclick="show('/api/ledger?limit=50')">恢复台账</button>
+    <button onclick="show('/api/audit?limit=30')">全局审计（含来源）</button>
+    <button onclick="reconcile()">手动对账续作</button>
+  </div>
+  <pre id="output">点击上方按钮读取记账链状态。</pre>
 </main>
 <script>
 const headers = {"X-User-Id":"demo-admin","X-Role":"admin","X-Org":"demo"};
@@ -26,8 +39,11 @@ async function show(path) {
   const data = await response.json();
   document.getElementById("output").textContent = JSON.stringify(data, null, 2);
 }
-document.getElementById("load").onclick = () => show("/api/records?limit=20");
-document.getElementById("stats").onclick = () => show("/api/stats");
+async function reconcile() {
+  const response = await fetch("/api/reconcile", {method: "POST", headers, body: "{}"});
+  const data = await response.json();
+  document.getElementById("output").textContent = JSON.stringify(data, null, 2);
+}
 </script>
 </body>
 </html>
